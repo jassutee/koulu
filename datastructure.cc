@@ -1,196 +1,176 @@
-// Definition of Datastructure class, hw3 of TIE-20100/TIE-20106
-
 #include "datastructure.hh"
 
 #include <string>
-#include <map>
+#include <vector>
+#include <algorithm>
 #include <iostream>
-#include <queue> //priority_queue
-#include <functional>
-#include <algorithm> //min_element
 
+// Empty implementations for public interface, modify and add your own code here
 
-Datastructure::Datastructure(): bpysakit{}, blinjat{}, bussit{}
+//Alustetaan hajautustaulu 3000 kokoiseksi, sillä oletetaan täytön
+//olevan noin 1000, eli 500-1500. Näin pidetään täyttöaste alle puolen.
+Datastructure::Datastructure(): hajautustaulu(3000, nullptr),
+    taytto{0}, maara{0}, kokomuutokset{0}
 {
+
 }
 
 Datastructure::~Datastructure()
 {
-    empty();
+
 }
 
-void Datastructure::add_stop(int stop_id, std::string stop_name)
+void Datastructure::add(const string &ID, const string &location,
+                        unsigned int amount, const string &name)
 {
-    std::map<int, linja*> lahtevat_linjat{};
-    aika etaisyys{24, 0};
-    pysakki uusi{stop_id, stop_name, lahtevat_linjat, 'v', etaisyys, nullptr, nullptr};
-    bpysakit[stop_id] = uusi;
-}
+    // Lasketaan karkille indeksi hajautusfunktiolla
+    size_t avain{std::hash<std::string>()(ID) % hajautustaulu.size()};
 
-void Datastructure::add_route(int route_id, std::string route_name)
-{
-    std::multimap<unsigned int, pysakki*> pysakit{};
-    linja uusi{route_id, route_name, pysakit, "", ""};
-    blinjat[route_id] = uusi;
-}
-
-void Datastructure::add_stop_to_route(int route_id, int stop_id, unsigned int minutes)
-{
-    aika minuutit{0,minutes};
-    if (minuutit.minuutit >= 60) {
-        int n = minuutit.minuutit / 60;
-        minuutit.tunnit = n;
-        minuutit.minuutit = minuutit.minuutit % 60;
+    // Luodaan valmiiksi apumuuttujia
+    karkki *x = hajautustaulu[avain];
+    // Tätä tarvitaan, jos karkkia ei vielä ole varastossa
+    karkki *uusi{new karkki{ID, amount, location, name, nullptr}};
+    // Onko indeksi jo varattu?
+    if (x != nullptr) {
+        // Käydään läpi kaikki indeksissä olevat karkit
+        // Luodaan apumuuttuja, joka kertoo, oliko karkki indeksissä
+        bool loytynyt{false};
+        if (x->id == ID) loytynyt = true;
+        while (!loytynyt && x->seuraava != nullptr) {
+            x = x->seuraava;
+            if (x->id == ID) {
+                loytynyt = true;
+            }
+        }
+        if (loytynyt) {
+            x->lkm += amount;
+        }
+        // Jos karkkia ei löytynyt, x osoittaa viimeiseen karkkiin.
+        // Lisätään sen perään uusi karkki.
+        else {
+            x->seuraava = uusi;
+            maara += 1;
+        }
     }
-    // sijoitetaan uusi pysäkkitieto linjalle
-    blinjat[route_id].pysakit.insert(std::pair<aika, pysakki*>(minuutit,&bpysakit[stop_id]));
-    // ja linjatieto pysäkille
-    bpysakit[stop_id].lahtevat[route_id] = &blinjat[route_id];
+    // Indeksiä ei oltu varattu, lisätään siis uusi karkki
+    else {
+        hajautustaulu[avain] = uusi;
+        maara += 1;
+        taytto += 1;
+        //Täytyy tarkistaa, ettei täyttöaste kasva liian suureksi
+        if (taytto/hajautustaulu.size() > MAX_TAYTTOASTE) {
+            hajautustaulu.resize(hajautustaulu.size()*2, nullptr);
+            kokomuutokset += 1;
+        }
+    }
 }
 
-void Datastructure::add_bus(int bus_id, int route_id, unsigned int start_hours, unsigned int start_minutes)
+void Datastructure::substract(const string &ID, unsigned int amount)
 {
-    aika lahto{start_hours, start_minutes};
-    bussi uusi{bus_id, lahto};
-    bussit.insert(std::pair<int, bussi>(route_id, uusi));
+    size_t avain{std::hash<std::string>()(ID) % hajautustaulu.size()};
+    karkki *x = hajautustaulu[avain];
+    // Haetaan x:ää vastaava karkki, jossei löydy, x on nullpointer
+    etsi(x, ID);
+    if (x != nullptr) {
+        if (x->lkm >= amount) {
+            x->lkm -= amount;
+            // Tarkistetaan, vähennettiinkö kaikki karkit
+            if (x->lkm == 0) {
+                // Siinä tapauksessa poistetaan karkki kokonaan tietokannasta
+                poista(avain, x);
+            }
+        }
+        else {
+            std::cout << NOT_ENOUGH_CANDY << std::endl;
+        }
+        std::cout << "Amount: " << x->lkm << " ";
+        std::cout << "Shelf: " << x->hylly << std::endl;
+    }
+    else {
+        std::cout << NOT_AVAILABLE << std::endl;
+    }
+}
+
+void Datastructure::find(const string &ID) const
+{
+    size_t avain{std::hash<std::string>()(ID) % hajautustaulu.size()};
+    karkki *x = hajautustaulu[avain];
+    etsi(x, ID);
+    if (x != nullptr) {
+        std::cout << x -> nimi << " ";
+        std::cout << x -> lkm << " ";
+        std::cout << x -> hylly << std::endl;
+    }
+    else {
+        std::cout << NOT_AVAILABLE << std::endl;
+    }
+}
+
+size_t Datastructure::count() const
+{
+    // Koko ajan ollaan pidetty kirjaa eri karkkien määrästä, joten tämä on helppo
+    return maara;
 }
 
 void Datastructure::empty()
 {
-    bpysakit.clear();
-    blinjat.clear();
-    bussit.clear();
-}
-
-void Datastructure::print_stop(int stop_id)
-{
-    if (bpysakit.find(stop_id) == bpysakit.end()) {
-        std::cout << NO_SUCH_STOP << std::endl;
-    } else {
-        std::cout << bpysakit[stop_id].nimi << std::endl;
-    }
-}
-
-void Datastructure::print_buses(int stop_id)
-{
-    if (bpysakit.find(stop_id) == bpysakit.end()) {
-        std::cout << NO_SUCH_STOP << std::endl;
-    } else {
-        for (auto linja: bpysakit[stop_id].lahtevat) {
-            if (linja.second->lahto == "") {
-                // haetaan lähtö- ja kohdepysäkkien tiedot iteraattorin avulla
-                // ensin sijoitetaan iteraattori lähtöpysäkin kohdalle
-                std::multimap<unsigned int, pysakki*>::iterator i{linja.second -> pysakit.begin()};
-                linja.second -> lahto = (*i).second -> nimi;
-                // siirretään iteraattori viimeisen pysäkin kohdalle
-                i = linja.second->pysakit.end();
-                --i;
-                linja.second -> kohde = (*i).second -> nimi;
+    // Käydään kaikki taulun alkiot läpi
+    for (size_t i=0; i< hajautustaulu.size(); i++) {
+        // Jos indeksissä on jotakin, kutsutaan poista-funktiota kunnes indeksi on tyhjä
+        if (hajautustaulu[i] != nullptr) {
+            while (hajautustaulu[i] != nullptr) {
+                karkki *x = hajautustaulu[i];
+                poista(i, x);
             }
-            std::cout << linja.first << ": " << linja.second->lahto << " - ";
-            std::cout << linja.second->kohde << std::endl;
         }
     }
 }
 
-void Datastructure::print_statistics()
+void Datastructure::poista(const size_t& i, karkki* poistettava)
 {
-    std::cout << bpysakit.size() << " stops, " <<
-                 blinjat.size() << " routes, " <<
-                 bussit.size() << " buses." << std::endl;
-}
-
-void Datastructure::print_fastest_journey(int start_stop, int end_stop, unsigned int hours, unsigned int minutes)
-{
-    if (bpysakit.find(start_stop) == bpysakit.end() or
-            bpysakit.find(end_stop) == bpysakit.end()) {
-        std::cout << NO_SUCH_STOP << std::endl;
-        return;
-    }
-    // "siivotaan" edellisen haun jäljiltä
-    for (auto pysakki: bpysakit) {
-        if (pysakki.second.vari != 'v') {
-            pysakki.second.vari = 'v';
-            // "ääretön" etäisyys on hyvä asettaa 24 tunniksi, sillä matka tulee muutenkin
-            // kulkea saman vuorokauden sisällä
-            pysakki.second.etaisyys.tunnit = 24;
-            pysakki.second.etaisyys.minuutit = 0;
-            pysakki.second.edellinen = nullptr;
-            pysakki.second.tultiin = nullptr;
+    // Jos poistettava on indeksin ensimmäinen karkki
+    if (poistettava == hajautustaulu[i]) {
+        hajautustaulu[i] = poistettava->seuraava;
+        // Tarkistetaan, jäikö indeksi tyhjäksi
+        if (hajautustaulu[i] == nullptr) {
+            taytto -= 1;
         }
     }
-    // luodaan prioriteettijono, josta valitaan aina ensimmäisenä nopeimpana oleva pysäkki
-    std::priority_queue<pysakki*> pjono;
-    // tallennetaan lähtöaika samaan muotoon kuin tietokannan ajat ovat
-    aika lahtoaika{hours, minutes};
-
-    // aloitetaan lähtöpysäkistä
-    pysakki* nykyinen{&bpysakit[start_stop]};
-    nykyinen->vari = 'h';
-    nykyinen->etaisyys.tunnit = 0;
-    nykyinen->etaisyys.minuutit = 0;
-    pjono.push(nykyinen);
-
-    while (!pjono.empty()) {
-        nykyinen = pjono.top();
-        pjono.pop();
-        // tarkistetaan, ettei tehdä tarkasteluja monesti samalle pysäkille
-        if (nykyinen->vari == 'm') continue;
-        // tarkistetaan myös, löytyikö päätepysäkki
-        if (nykyinen->id == end_stop) break;
-
-        for (auto linja: nykyinen->lahtevat) {
-            // iteroidaan nykyisen pysäkin kohdalle minuuttimapissa
-            std::multimap<aika, pysakki*>::iterator p_i{linja.second->pysakit.begin()};
-            while (p_i->second->id != nykyinen->id) {
-                p_i++;
-            }
-            // määritellään mahdollinen odotusaika
-            aika odotusaika{0, 0};
-        //----------------vJOS EDELLINEN LINJA ON ERI KUIN SEURAAVA-------------
-            if (linja->second != nykyinen->tultiin) {
-                // haetaan linjan kuluttama aika päästä kyseiselle pysäkille lähtöpysäkiltä
-                aika minuutit{p_i->first};
-
-                // haetaan seuraava pysäkille tuleva linjan bussi
-                std::vector<aika> aikaerot;
-                std::multimap<int, bussi>::iterator b_i{bussit.find(linja.first)};
-                // kirjataan ylös kaikki annetun ajan jälkeen tulevien bussien odotusajat
-                while (b_i->first == linja.first) {
-                    if (b_i->second.blahtoaika + minuutit >= lahtoaika) {
-                        aikaerot.push_back(lahtoaika-(b_i->second.blahtoaika + minuutit));
-                    }
-                    b_i++;
-                }
-                // => saadaan selville tämän linjan odotusaika pysäkillä
-                odotusaika = *std::min_element(aikaerot.begin(),aikaerot.end());
-            }
-        //----------------^JOS EDELLINEN LINJA ON ERI KUIN SEURAAVA-------------
-
-            // haetaan linjan seuraava pysäkki ja merkataan se jonoon
-            pysakki* seuraava{(++p_i)->second};
-            if (seuraava->vari == 'v') {
-                seuraava->vari = 'h';
-                pjono.push(seuraava);
-            }
-            // tarkistetaan, tarvitseeko reittiä pysäkille muuttaa
-            relax(nykyinen, seuraava, p_i->first+odotusaika, linja->second);
+    else {
+        // Haetaan indeksistä poistettavaa edeltävä alkio, jotta osoittimet saadaan korjattua
+        karkki *edellinen = hajautustaulu[i];
+        while (edellinen->seuraava != poistettava) {
+            edellinen = edellinen->seuraava;
         }
-        // merkitään nykyinen solmu läpikäydyksi
-        nykyinen->vari = 'm';
+        edellinen->seuraava = poistettava->seuraava;
     }
-    if (nykyinen->id != end_stop) {
-        std::cout << NO_ROUTE << std::endl;
-        return;
-    }
+    // Vapautetaan muisti
+    delete poistettava;
+    maara -= 1;
 }
 
-// Täällä lasketaan, että pitääkö reittiä mihin-pysäkille muuttaa
-void Datastructure::relax(const pysakki *&mista, pysakki *&mihin, const aika &vali, const linja*& bussi)
+void Datastructure::etsi(karkki* &x, const std::string& ID) const
 {
-    if (mihin->etaisyys > mista->etaisyys + vali) {
-        mihin->etaisyys = mista->etaisyys + vali;
-        mihin->edellinen = mista;
-        mihin->tultiin = bussi;
-    }
+// Mielestäni toimiva koodinpätkä, mutta 30000 alkion testiajo ei aikatestauksessa
+// jostain syystä tänne suostu edes menemään (joten jätin kommentiksi):
+/*    //Jos taulua on tarvinnut suurentaa, täytyy avain laskea myös
+    //edellisillä koilla ja etsiä niistä indekseistä
+    for (int i = 0; i <= kokomuutokset; i++) {
+        if (i>0) {
+            // koska ei ole valmista potenssifunktiota...
+            int p{2};
+            while (i>1) {
+                p *= 2;
+                i--;
+            }
+            x = hajautustaulu[std::hash<std::string>()(ID) % (hajautustaulu.size()/p)];
+        }*/
+        // Etsitään indeksistä saman id:n alkio ja palautetaan se viiteosoittimena
+        while (x != nullptr) {
+            if (x->id == ID) {
+                return;
+            }
+            x = x->seuraava;
+        }
+   // }
 }
